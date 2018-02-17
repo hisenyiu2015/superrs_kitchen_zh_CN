@@ -10,6 +10,13 @@ banner() {
 	echo "------------------------------------------------------"
 	echo ""
 }
+aikdl() {
+	sterm=$(echo "$dlinfo" | gawk '{print $2}')
+	nname=$(echo "$dlinfo" | gawk '{print $1}')
+	fname=$(basename $(wget -qO- "https://basketbuild.com/devs/osm0sis/aik" | cat | grep ">Download<" | grep "AIK-Linux" | cut -d'"' -f4))
+	furl="https://basketbuild.com/uploads/devs/osm0sis/aik/$fname"
+	(wget -O "$nname" "$furl" 2>&1) >/dev/null
+}
 assert_devices() {
 	assertch=""
 	while [[ ! $assertch ]]; do
@@ -2238,10 +2245,7 @@ deodex_start() {
 			fi
 		done
 		return
-	elif [[ $api -eq 23 && $androidversion = "N" ]] || [[ $api -ge 24 ]]; then
-		if [[ $androidversion = "O" ]]; then
-			api="26"
-		fi
+	elif [[ $api -eq 23 || $api -eq 24 || $api -eq 25 ]] && [[ $androidversion != "O" ]]; then
 		jarname="smali"
 		jartitle="$t_title_cho_smali"
 		choose_jartitle
@@ -2252,6 +2256,9 @@ deodex_start() {
 		choose_jartitle
 		baksmali="$thecho"
 		dtype="n2"
+		deodex
+	elif [[ $api -ge 25 ]]; then
+		dtype="o"
 		deodex
 	else
 		banner
@@ -2264,13 +2271,12 @@ deodex_start() {
 deodex() {
 	arch=""
 	arch2=""
-	archtmp="arm64 x86_64 arm x86"
-	for i in $archtmp; do
-		archtest=$(find $framedir -type d 2>/dev/null | grep -m 1 -o "$i$")
-		if [[ $archtest ]]; then
+	while read i; do
+		if [[ -d "$framedir/$i" ]]; then
+			archtest="$i"
 			break
 		fi
-	done
+	done <<< "$(echo -e "arm64\nx86_64\narm\nx86")"
 	if [[ $(echo "$archtest" | grep "64") ]]; then
 		arch2test=$(echo "$archtest" | sed 's/_64//; s/64$//')
 	fi
@@ -2301,6 +2307,8 @@ deodex() {
 			echo -e "\t$(basename $baksmali)$normal"
 		elif [[ $dtype = "l" || $dtype = "m" ]]; then
 			echo -e "$bluet$t_deodex_method${greent}\t$(basename $oat2dex)$normal"
+		elif [[ $dtype = "o" ]]; then
+			echo -e "$bluet$t_deodex_method${greent}\t$(basename $vdexext)$normal"
 		fi
 		echo ""
 		read -n 1 -p "$t_deodex_continue_q" reply
@@ -2316,15 +2324,17 @@ deodex() {
 	dodeodex() {
 		app=""
 		for app in $(echo "$applist"); do
-			if [[ ! -d $deoappdir/$app/$deoarch ]] || [[ ! -f $deoappdir/$app/$app.apk ]]; then
+			cd "$deoappdir/$app"
+			app2=$(basename "$(find -name *.apk 2>/dev/null | head -n 1 | sed 's/\.apk$//')" 2>/dev/null)
+			if [[ ! -d $deoarch || ! -f $app2.apk ]]; then
 				continue
 			fi
-			if [[ ! $($p7z l $deoappdir/$app/$app.apk | grep classes.dex) ]]; then
+			if [[ ! $($p7z l $app2.apk | grep classes.dex) ]]; then
 				echo ""
 				echo "$t_deodex_deodexing $app"
 				echo ""
 				if [[ $dtype = "m2" || $dtype = "n2" ]]; then
-					classes=$(java -Xmx${heapsize}m -jar $baksmali list dex $deoappdir/$app/$deoarch/$app.odex 2>&1)
+					classes=$(java -Xmx${heapsize}m -jar $baksmali list dex $deoarch/$app2.odex 2>&1)
 					echo "$classes" >> $logs/deodex.log
 					echo "$classes" | while read line; do
 						apkdex=$(basename $(echo "$line"))
@@ -2333,33 +2343,46 @@ deodex() {
 						else
 							dexclass=$(echo "$apkdex" | cut -d":" -f2-)
 						fi
-						java -Xmx${heapsize}m -jar $baksmali deodex -b $framedir/$deoarch2/boot.oat $deoappdir/$app/$deoarch/$app.odex/$apkdex -o $deoappdir/$app/$deoarch/smali >> $logs/deodex.log
-						java -Xmx${heapsize}m -jar $smali assemble -a $api $deoappdir/$app/$deoarch/smali -o $deoappdir/$app/$deoarch/$dexclass >> $logs/deodex.log
-						rm -rf $deoappdir/$app/$deoarch/smali
-						if [[ ! -f $deoappdir/$app/$deoarch/$dexclass ]]; then
-							echo "$deoappdir/$app/$deoarch/$dexclass" >> $logs/deodex_fail_list
+						java -Xmx${heapsize}m -jar $baksmali deodex -b $framedir/$deoarch2/boot.oat $deoarch/$app2.odex/$apkdex -o $deoarch/smali >> $logs/deodex.log
+						java -Xmx${heapsize}m -jar $smali assemble -a $api $deoarch/smali -o $deoarch/$dexclass >> $logs/deodex.log
+						rm -rf $deoarch/smali
+						if [[ ! -f $deoarch/$dexclass ]]; then
+							echo "${deoappdir/$romdir/}/$app/$deoarch/$dexclass" >> $logs/deodex_fail_list
 							continue
 						fi
 					done
 				elif [[ $dtype = "m" || $dtype = "l" ]]; then
-					java -Xmx${heapsize}m -jar $oat2dex $deoappdir/$app/$deoarch/$app.odex $framedir/$deoarch2/odex >> $logs/deodex.log
-					if [[ ! -f $deoappdir/$app/$deoarch/$app.dex ]]; then
-						rm -rf $deoappdir/$app/$deoarch/$app-classes*.dex
+					java -Xmx${heapsize}m -jar $oat2dex $deoarch/$app2.odex $framedir/$deoarch2/odex >> $logs/deodex.log
+					if [[ ! -f $deoarch/$app2.dex ]]; then
+						rm -rf $deoarch/$app2-classes*.dex
 						continue
 					fi
-					mv $deoappdir/$app/$deoarch/$app.dex $deoappdir/$app/$deoarch/classes.dex
-					find $deoappdir/$app/$deoarch -name $app-classes*.dex | while read line; do
+					mv $deoarch/$app2.dex $deoarch/classes.dex
+					find $deoarch -name $app2-classes*.dex | while read line; do
 						appclassdex=$(basename $line)
 						appclassdir=$(dirname $line)
 						classname=$(echo "$appclassdex" | cut -d"-" -f2)
 						mv $line $appclassdir/$classname
 					done
+				elif [[ $dtype = "o" ]]; then
+					cd $deoarch
+					$vdexext -i $app2.vdex >> $logs/deodex.log
+					if [[ ! -f $app2.apk_classes.dex ]]; then
+						echo "${deoappdir/$romdir/}/$app/$app2.apk" >> $logs/deodex_fail_list
+						rm -rf $app2.apk_classes*
+						continue
+					fi
+					
+					ls | grep ".apk_classes" | while read i; do
+						mv "$i" "$(echo ${i##*_})"
+					done
+					cd $deoappdir/$app
 				fi
-				$aapt add -fk $deoappdir/$app/$app.apk $deoappdir/$app/$deoarch/classes*.dex >> $logs/zip.log
+				($aapt add -fk "$app2.apk" "$deoarch"/classes*.dex 2>&1) >> $logs/zip.log
 				if [[ $dtype = "l" ]]; then
-					rm -rf $deoappdir/$app/$deoarch
+					rm -rf $deoarch
 				else
-					rm -rf $deoappdir/$app/oat
+					rm -rf oat
 				fi
 			else
 				echo ""
@@ -2444,7 +2467,9 @@ deodex() {
 			mkdir -p $sysdir/app/$aname/oat/$arch
 			mv $i $sysdir/app/$aname/oat/$arch/
 			if [[ $chimerav ]]; then
-				mv $(echo "$i" | sed 's/\.odex$/\.vdex/') $sysdir/app/$aname/oat/$arch/
+				if [[ -f $(echo "$i" | sed 's/\.odex$/\.vdex/') ]]; then
+					mv $(echo "$i" | sed 's/\.odex$/\.vdex/') $sysdir/app/$aname/oat/$arch/
+				fi
 			fi
 			mv $sysdir/priv-app/PrebuiltGmsCore/app_chimera/$dname/$aname.apk $sysdir/app/$aname/
 			echo "$sysdir/app/$aname/$aname.apk $sysdir/priv-app/PrebuiltGmsCore/app_chimera/$dname/" >> $logs/extramv.txt
@@ -2456,12 +2481,19 @@ deodex() {
 		for i in $vframe; do
 			nframe=$(basename $i | sed 's/\.jar$//')
 			dframe=$(dirname $i)
-			mv $i $framedir/
-			mv $dframe/oat/$arch/$nframe.odex $framedir/oat/$arch/
+			flip=""
+			if [[ -f $dframe/oat/$arch/$nframe.odex ]]; then
+				mv $dframe/oat/$arch/$nframe.odex $framedir/oat/$arch/
+				flip="1"
+			fi				
 			if [[ -f $dframe/oat/$arch/$nframe.vdex ]]; then
 				mv $dframe/oat/$arch/$nframe.vdex $framedir/oat/$arch/
+				flip="1"
 			fi
-			echo "$framedir/$nframe.jar $i" >> $logs/extramv.txt
+			if [[ $flip ]]; then
+				mv $i $framedir/
+				echo "$framedir/$nframe.jar $i" >> $logs/extramv.txt
+			fi
 		done
 		rm -rf $sysdir/vendor/framework/oat
 	fi
@@ -2569,12 +2601,13 @@ deodex() {
 	echo "$t_deodex_start_frame"
 	echo "----------------------------------------------------"
 	echo ""
+	cd "$framedir"
 	if [[ $dtype = "n2" || $dtype = "m2" ]]; then
 		if [[ $dtype = "n2" ]]; then
-			ls $framedir/$deoarch2 | grep .oat$ | sort | while read line; do
+			ls $deoarch2 | grep .oat$ | sort | while read line; do
 				if [[ $line != "boot.oat" ]]; then
 					framejar=$(echo "$(echo "$line" | sed 's/^boot-//; s/\.oat$//').jar")
-					if [[ $($p7z l $framedir/$framejar | grep classes.dex) ]]; then
+					if [[ $($p7z l $framejar | grep classes.dex) ]]; then
 						echo ""
 						echo "$greent$frame $t_deodex_app_already$normal"
 						echo ""
@@ -2584,7 +2617,7 @@ deodex() {
 				echo ""
 				echo "$t_deodex_deodexing $line"
 				echo ""
-				classes=$(java -Xmx${heapsize}m -jar $baksmali list dex $framedir/$deoarch2/$line | rev | cut -d"/" -f1 | rev)
+				classes=$(java -Xmx${heapsize}m -jar $baksmali list dex $deoarch2/$line | rev | cut -d"/" -f1 | rev)
 				echo "$classes" >> $logs/deodex.log
 				echo "$classes" | while read line2; do
 					if [[ ! $(echo "$line2" | grep classes) ]]; then
@@ -2594,13 +2627,13 @@ deodex() {
 						line3=$(echo "$line2" | rev | cut -d"." -f3- | rev)
 						dexclass=$(echo "$line2" | cut -d":" -f2-)
 					fi
-					java -Xmx${heapsize}m -jar $baksmali deodex -b $framedir/$deoarch2/boot.oat $framedir/$deoarch2/$line/$line2 -o $framedir/$deoarch2/smali >> $logs/deodex.log
-					java -Xmx${heapsize}m -jar $smali assemble -a $api $framedir/$deoarch2/smali -o $framedir/$line3.jar:$dexclass >> $logs/deodex.log
-					rm -rf $framedir/$deoarch2/smali
+					java -Xmx${heapsize}m -jar $baksmali deodex -b $deoarch2/boot.oat $deoarch2/$line/$line2 -o $deoarch2/smali >> $logs/deodex.log
+					java -Xmx${heapsize}m -jar $smali assemble -a $api $deoarch2/smali -o $line3.jar:$dexclass >> $logs/deodex.log
+					rm -rf $deoarch2/smali
 				done
 			done
 		elif [[ $dtype = "m2" ]]; then
-			classes=$(java -Xmx${heapsize}m -jar $baksmali list dex $framedir/$deoarch2/boot.oat | rev | cut -d"/" -f1 | rev)
+			classes=$(java -Xmx${heapsize}m -jar $baksmali list dex $deoarch2/boot.oat | rev | cut -d"/" -f1 | rev)
 			line=""
 			for line in $(echo "$classes"); do
 				if [[ ! $(echo "$line" | grep classes) ]]; then
@@ -2610,7 +2643,7 @@ deodex() {
 					framejar=$(echo "$line" | cut -d":" -f1)
 					dexclass=""
 				fi
-				if [[ $($p7z l $framedir/$framejar | grep classes.dex) ]]; then
+				if [[ $($p7z l $framejar | grep classes.dex) ]]; then
 					echo ""
 					echo "$greent$frame $t_deodex_app_already$normal"
 					echo ""
@@ -2620,16 +2653,16 @@ deodex() {
 				echo ""
 				echo "$t_deodex_deodexing $line2"
 				echo ""
-				java -Xmx${heapsize}m -jar $baksmali deodex -b $framedir/$deoarch2/boot.oat $framedir/$deoarch2/boot.oat/$line -o $framedir/smali >> $logs/deodex.log
-				java -Xmx${heapsize}m -jar $smali assemble -a $api $framedir/smali -o $framedir/$line$dexclass >> $logs/deodex.log
-				rm -rf $framedir/smali
+				java -Xmx${heapsize}m -jar $baksmali deodex -b $deoarch2/boot.oat $deoarch2/boot.oat/$line -o smali >> $logs/deodex.log
+				java -Xmx${heapsize}m -jar $smali assemble -a $api smali -o $line$dexclass >> $logs/deodex.log
+				rm -rf smali
 			done
 		fi
-		if [[ -d $framedir/$deoarch ]]; then
+		if [[ -d $deoarch ]]; then
 			frame=""
-			for frame in $(ls $framedir/$deoarch | grep .odex$ | sort); do
+			for frame in $(ls $deoarch | grep .odex$ | sort); do
 				framejar=$(echo "$(echo "$frame" | rev | cut -d"." -f2- | rev).jar")
-				if [[ $($p7z l $framedir/$framejar | grep classes.dex) ]]; then
+				if [[ $($p7z l $framejar | grep classes.dex) ]]; then
 					echo ""
 					echo "$greent$frame $t_deodex_app_already$normal"
 					echo ""
@@ -2638,7 +2671,7 @@ deodex() {
 				echo ""
 				echo "$t_deodex_deodexing $frame"
 				echo ""
-				classes=$(java -Xmx${heapsize}m -jar $baksmali list dex $framedir/$deoarch/$frame)
+				classes=$(java -Xmx${heapsize}m -jar $baksmali list dex $deoarch/$frame)
 				echo "$classes" >> $logs/deodex.log
 				echo "$classes" | while read line; do
 					apkdex=$(basename $(echo "$line"))
@@ -2647,54 +2680,104 @@ deodex() {
 					else
 						dexclass="$apkdex"
 					fi
-					java -Xmx${heapsize}m -jar $baksmali deodex -b $framedir/$deoarch2/boot.oat $framedir/$deoarch/$frame/$apkdex -o $framedir/$deoarch/smali >> $logs/deodex.log
-					java -Xmx${heapsize}m -jar $smali assemble -a $api $framedir/$deoarch/smali -o $framedir/$dexclass >> $logs/deodex.log
-					rm -rf $framedir/$deoarch/smali
+					java -Xmx${heapsize}m -jar $baksmali deodex -b $deoarch2/boot.oat $deoarch/$frame/$apkdex -o $deoarch/smali >> $logs/deodex.log
+					java -Xmx${heapsize}m -jar $smali assemble -a $api $deoarch/smali -o $dexclass >> $logs/deodex.log
+					rm -rf $deoarch/smali
 				done
 			done
 		fi
 	elif [[ $dtype = "l" || $dtype = "m" ]]; then
-		if [[ -d $framedir/$deoarch ]]; then
-			for frame in $(ls $framedir/$deoarch | grep .odex$ | sort); do
+		if [[ -d $deoarch ]]; then
+			for frame in $(ls $deoarch | grep .odex$ | sort); do
 				echo ""
 				echo "$t_deodex_deodexing $frame"
 				echo ""
 				errtest=$(echo "$frame" | rev | cut -d"." -f2- | rev)
-				java -Xmx${heapsize}m -jar $oat2dex $framedir/$deoarch/$frame $framedir/$deoarch2/odex >> $logs/deodex.log
+				java -Xmx${heapsize}m -jar $oat2dex $deoarch/$frame $deoarch2/odex >> $logs/deodex.log
 			done
 		fi
-		mv $framedir/$deoarch2/dex/* $framedir/$deoarch/
-		ls $framedir/$deoarch | grep "\.dex$" | while read line; do
+		mv $deoarch2/dex/* $deoarch/
+		ls $deoarch | grep "\.dex$" | while read line; do
 			if [[ ! $(echo "$line" | grep classes) ]]; then
 				frame=$(echo "$(echo "$line" | sed 's/\.dex//').jar:classes.dex")
 			else
 				dexclass=$(echo "$line" | rev | cut -d"-" -f1 | rev)
 				frame=$(echo "$(echo "$line" | sed "s/-$dexclass//").jar:$dexclass")
 			fi
-			mv $framedir/$deoarch/$line $framedir/$frame
+			mv $deoarch/$line $frame
+		done
+	elif [[ $dtype = "o" ]]; then
+		for d in $framedir/$arch $framedir/$arch2; do
+			cd "$d"
+			if [[ -f "boot.oat" && -f "boot.vdex" ]]; then
+				bootclass=$(strings boot.oat | tr ' ' '\n' 2>/dev/null | grep -m 1 '\-\-dex\-location=' | cut -d'=' -f2-)
+			fi
+			if [[ $bootclass && ! -f ${bootclass}__classes.dex ]]; then
+				nclass="$(echo "$bootclass" | sed 's/\.jar$/\.vdex/')"
+				mv boot.vdex boot-$(basename "$bootclass" | sed 's/\.jar$/\.vdex/')
+			fi
+			find -name "boot-*.vdex" | while read i; do
+				nname=$(echo "$i" | sed 's/^\.\///; s/^boot-//; s/\.vdex$//')
+				if [[ -f $framedir/$nname.jar__classes.dex ]]; then
+					continue
+				fi
+				echo ""
+				echo "$t_deodex_deodexing $(echo "$i" | sed 's/^\.\///')"
+				echo ""
+				mv "$i" "$nname.vdex"
+				$vdexext -i "$nname.vdex" >> $logs/deodex.log
+				if [[ ! $(ls | grep "$nname.apk_classes") ]]; then
+					echo "${d/$romdir/}/$nname.jar" >> $logs/deodex_fail_list
+					continue
+				fi
+				ls | grep "$nname.apk" | while read r; do
+					mv "$r" "$framedir/$(echo "$r" | sed 's/apk_/jar:/')"
+				done
+			done
+		done
+		for d in $framedir/oat/$arch $framedir/oat/$arch2; do
+			cd "$d"
+			ls | grep ".vdex$" | while read i; do
+				nname=$(echo "$i" | sed 's/\.vdex$//')
+				if [[ -f $framedir/$nname.jar__classes.dex ]]; then
+					continue
+				fi
+				echo ""
+				echo "$t_deodex_deodexing $i"
+				echo ""
+				$vdexext -i "$i" >> $logs/deodex.log
+				if [[ ! $(ls | grep ".apk_classes") ]]; then
+					echo "${d/$romdir/}/$nname.jar" >> $logs/deodex_fail_list
+					continue
+				fi
+				ls | grep "$nname.apk" | while read r; do
+					mv $r $framedir/$(echo "$r" | sed 's/apk_/jar:/')
+				done
+			done
 		done
 	fi
+	cd "$framedir"
 	banner
 	echo "$bluet$t_deodex_pack_jar$normal"
-	ls $framedir | grep "jar:classes.dex" | sort | while read line; do
-		line2=$(echo "$line" | cut -d":" -f1)
-		ls $framedir | grep .dex$ | grep "^$line2" | while read line3; do
-			line4=$(echo "$line3" | cut -d":" -f2)
-			mv $framedir/$line3 $framedir/$line4
+	ls | grep "jar:classes.dex" | sort | while read line; do
+		jname=$(echo "$line" | cut -d':' -f1)
+		ls | grep -e "^${jname}.*classes" | while read i; do
+			jclass=$(echo "$i" | cut -d':' -f2)
+			mv "$i" "$jclass"
 		done
-		if [[ -f $framedir/classes.dex ]]; then
-			$aapt add -fk $framedir/$line2 $framedir/classes*.dex >> $logs/zip.log
+		if [[ -f "classes.dex" ]]; then
+			($aapt add -fk "$jname" classes*.dex 2>&1) >> $logs/zip.log
 		else
-			echo "ERROR: $line2 has no classes.dex" >> $logs/deodex.log
+			echo "ERROR: $jname has no classes.dex" >> $logs/deodex.log
 		fi
-		rm -rf $framedir/classes*.dex
+		rm -rf classes*.dex
 	done
 	if [[ $dtype = "l" || $dtype = "m" ]]; then
-		rm -rf $framedir/$arch/odex
-		rm -rf $framedir/$arch/dex
+		rm -rf $arch/odex
+		rm -rf $arch/dex
 		if [[ $arch2 ]]; then
-			rm -rf $framedir/$arch2/odex
-			rm -rf $framedir/$arch2/dex
+			rm -rf $arch2/odex
+			rm -rf $arch2/dex
 		fi
 	fi
 	echo "$clears"
@@ -2713,10 +2796,10 @@ deodex() {
 		done
 	fi
 	rm -rf $logs/extramv.txt
-	rm -rf $framedir/oat
-	rm -rf $framedir/$arch
+	rm -rf oat
+	rm -rf $arch
 	if [[ $arch2 ]]; then
-		rm -rf $framedir/$arch2
+		rm -rf $arch2
 	fi
 
 	if [[ $dtype = "l" || $dtype = "m" ]]; then
@@ -2956,14 +3039,6 @@ deodex_sqsh() {
 	sqshfile=""
 	cd $romdir
 }
-xdadev() {
-	fname=$(echo "$dlinfo" | gawk '{print $1}')
-	xdalink=$(echo "$dlinfo" | gawk '{print $2}')
-	sterm=$(echo "$dlinfo" | gawk '{print $3}')
-	ltmp=$(wget -qO- "$xdalink" | cat | grep "/devdb/project/dl" | grep -v "xdabutton" | gawk '{print $6}')
-	furl="https://forum.xda-developers.com$(echo "$ltmp" | grep "$sterm" | cut -d'"' -f2)&task=get"
-	(wget -O "$fname" "$furl" 2>&1) >/dev/null
-}
 xdareg() {
 	fname=$(echo "$dlinfo" | gawk '{print $1}')
 	xdalink=$(echo "$dlinfo" | gawk '{print $2}')
@@ -3085,7 +3160,7 @@ extract_new() {
 		romchunk=""
 		romimg=""
 		romwin=""
-		find . -maxdepth 1 -type f | grep ".tgz$\|.zip$\|.tar$\|.tar.a$\|.tar.md5$\|.win\|chunk\|.img$\|system.ext4$\|system.img.ext4" | grep -v "boot\.img\|recovery\.img" | sed 's/^\.\///' > $prfiles/findextract
+		find . -maxdepth 1 -type f | grep ".tgz$\|.zip$\|.tar$\|.tar.a$\|.tar.md5$\|.win\|chunk\|.img$\|system.ext4$\|system.img.ext4" | grep -v "boot\.img\|recovery\.img" | sed 's/^\.\///' | sort > $prfiles/findextract
 		if [[ ! $(cat $prfiles/findextract | wc -l) -gt "1" ]]; then
 			if [[ $(grep *-*-factory-*.tgz $prfiles/findextract) || $(grep *-*-factory-*.zip $prfiles/findextract) || $(grep *-*-preview-*.tgz $prfiles/findextract) || $(grep *-*-preview-*.zip $prfiles/findextract) ]]; then
 				romtgz=$(cat $prfiles/findextract)
@@ -3384,11 +3459,18 @@ extract_new() {
 				banner
 				echo "$bluet$t_extract_dat$normal"
 				$p7z e $romzip *.new.dat* *.transfer.list boot.img 2>/dev/null >> $logs/zip.log
-				if [[ -f system.new.dat.xz ]]; then
-					$p7z e system.new.dat.xz 2>/dev/null >> $logs/zip.log
-					rm -rf system.new.dat.xz
-				fi
-				ls | grep "\.new\.dat" | cut -d"." -f1 | while read line; do
+				ls | grep "\.new\.dat" | while read i; do
+					line=$(echo "$i" | cut -d"." -f1)
+					if [[ $(echo "$i" | grep "\.dat\.xz") ]]; then
+						$p7z e "$i" 2>/dev/null >> $logs/zip.log
+						rm -rf "$i"
+					fi
+					if [[ $(echo "$i" | grep "\.dat\.br") ]]; then
+						banner
+						echo "$bluet$t_extract_convert_br$normal"
+						$ttools/brotli -d "$i"
+						rm -f "$i"
+					fi
 					banner
 					echo "$bluet$t_extract_convert_sys $line.img ...$normal"
 					$ttools/sdat2img.py $line.transfer.list $line.new.dat $line.img > $logs/main.log
@@ -3453,18 +3535,20 @@ extract_new() {
 				$p7z e $romzip $mainmd5 $cscmd5 2>/dev/null >> $logs/zip.log
 				banner
 				echo "$bluet$t_extract_img$normal"
-				if [[ $(tar -tf $mainmd5 | grep system.img.ext4) ]]; then
-					tar -xf $mainmd5 system.img.ext4 boot.img 2>/dev/null >> $logs/zip.log
-					mv system.img.ext4 system.img
-				elif [[ $(tar -tf $mainmd5 | grep system.img) ]]; then
-					tar -xf $mainmd5 system.img boot.img 2>/dev/null >> $logs/zip.log
-				fi
-				if [[ $(tar -tf $cscmd5 | grep cache.img.ext4) ]]; then
-					tar -xf $cscmd5 cache.img.ext4 2>/dev/null >> $logs/zip.log
-					mv cache.img.ext4 cache.img
-				elif [[ $(tar -tf $cscmd5 | grep cache.img) ]]; then
-					tar -xf $cscmd5 cache.img 2>/dev/null >> $logs/zip.log
-				fi
+				for i in "$mainmd5" "$cscmd5"; do
+					tarulist=$(tar -tf $i | grep -e ".*system.*\.img.*\|.*system.*ext4\|.*boot\.img\|.*cache.*\.img.*\|.*cache.*ext4")
+					echo "$tarulist" | while read line; do
+						tar -xf "$i" "$line" 2>/dev/null >> $logs/zip.log
+						if [[ $(echo "$line" | grep "\.lz4") ]]; then
+							"$lz4" "$line"
+							rm -f "$line"
+							line=$(echo "$line" | sed 's/\.lz4$//')
+						fi
+						if [[ $(echo "$line" | grep "\.ext4") ]]; then
+							mv "$line" "$(echo "$line" | cut -d'.' -f1).img"
+						fi
+					done
+				done
 				if [[ -f system.img ]]; then
 					rm -rf $mainmd5
 					rm -rf $cscmd5
@@ -4344,7 +4428,7 @@ grab_devices() {
 imgextract() {
 	banner
 	echo "$bluet$t_extract_sparse_convert$normal"
-	$simg2img ${extractimg}.img ${extractimg}.img-2 2>/dev/null
+	$simg2img ${extractimg}.img ${extractimg}.img-2 >/dev/null
 	if [[ ! -s ${extractimg}.img-2 ]]; then
 		rm -rf ${extractimg}.img-2
 	else
@@ -4396,29 +4480,25 @@ imgextract() {
 			apitemp=""
 		fi
 		if [[ $apitmp -ge "19" ]]; then
-			if [[ $extractimg = "system" && -f output/init.rc && -d output/system/app ]]; then
-				cd output
-				find . -maxdepth 1 | while read line; do
-					line2=$(echo "$line" | sed 's/^\.//')
-					filecon=$(ls -dZ $line | gawk '{print $1}')
-					if [[ ! $filecon || $(echo "$filecon" | grep "unlabeled\|?") ]]; then
-						filecon="#CONTEXT"
-					fi
-					stat -c "set_metadata(\"/system$line2\", \"uid\", %u, \"gid\", %g, \"mode\", 0%a, \"capabilities\", 0x0, \"selabel\", \"$filecon\");" $line >> $prfiles/root_meta
-				done
-				grep -v "\"/system\/system\"\|\"/system\"" $prfiles/root_meta > $prfiles/root_meta2
-				mv $prfiles/root_meta2 $prfiles/root_meta
-				cd $romdir
-			fi
+			local getmeta=$($tools/source/getmeta.py -s "$romdir/output" "$extractimg")
 			if [[ $extractimg = "system" || $extractimg = "vendor" ]]; then
 				if [[ $extractimg = "system" ]]; then
 					if [[ -f output/init.rc && -d output/system/app ]]; then
-						find output/system/bin -type f 2>/dev/null | sed 's/^output/system/' > $prfiles/binblk
-						find output/system/vendor/bin -type f 2>/dev/null | sed 's/^output/system/' > $prfiles/vinblk
+						echo "$getmeta" | grep -v "system/system\|system/ " | while read i; do
+							local thefile=$(echo "$i" | gawk '{print $1}')
+							local uid=$(echo "$i" | gawk '{print $2}')
+							local gid=$(echo "$i" | gawk '{print $3}')
+							local mode=$(echo "$i" | gawk '{print $4}')
+							local cap=$(echo "$i" | gawk '{print $5}')
+							local con=$(echo "$i" | gawk '{print $6}')
+							echo "set_metadata(\"/$thefile\", \"uid\", $uid, \"gid\", $gid, \"mode\", $mode, \"capabilities\", $cap, \"selabel\", \"$con\");" >> $prfiles/root_meta
+						done
+						find output/system/bin -type f 2>/dev/null | sed 's/^output/system/' | sort > $prfiles/binblk
+						find output/system/vendor/bin -type f 2>/dev/null | sed 's/^output/system/' | sort > $prfiles/vinblk
 						cp $tools/updater/set_meta_list2 $prfiles/set_meta_list
 					else
-						find output/bin -type f 2>/dev/null | sed 's/^output/system/' > $prfiles/binblk
-						find output/vendor/bin -type f 2>/dev/null | sed 's/^output/system/' > $prfiles/vinblk
+						find output/bin -type f 2>/dev/null | sed 's/^output/system/' | sort > $prfiles/binblk
+						find output/vendor/bin -type f 2>/dev/null | sed 's/^output/system/' | sort > $prfiles/vinblk
 						cp $tools/updater/set_meta_list $prfiles/set_meta_list
 					fi
 					sed -i "/#BIN/ r $prfiles/binblk" $prfiles/set_meta_list
@@ -4426,41 +4506,45 @@ imgextract() {
 					rm -rf $prfiles/binblk $prfiles/vinblk
 					metalist=$(cat $prfiles/set_meta_list)
 				elif [[ $extractimg = "vendor" ]]; then
-					if [[ -f $prfiles/file_contexts ]]; then
-						metalist=$(grep "^/vendor" $prfiles/file_contexts | gawk '{print $1}' | sed 's/^\///g')
+					if [[ $getmeta ]]; then
+						metalist=$(echo "$getmeta" | grep "^vendor/bin" | gawk '{print $1}' | sort)
 					else
 						metalist=$(cat $tools/updater/set_meta_listV)
 					fi
 				fi
-				echo "$metalist" | while read line; do
+				echo "$metalist" > $prfiles/tmpmetalist
+				echo "$getmeta" | grep -v ":system_file\|:system_library_file\|:vendor_file\|vendor_configs_file\|vendor_app_file\|vendor_hal_file\|vendor_overlay_file\|vendor_framework_file\|same_process_hal_file\|:rootfs" | sort | while read line; do
+					i=$(echo "$line" | gawk '{print $1}')
+					if [[ ! $(grep "$i" $prfiles/tmpmetalist) ]]; then
+						echo "$i" >> $prfiles/tmpmetalist
+					fi
+				done
+				cat $prfiles/tmpmetalist | while read line; do
 					if [[ $extractimg = "system" ]]; then
-						line2=$(echo "$line" | sed 's/^system/output/')
 						set_metadata1="set_metadata1"
 					else
-						line2=$(echo "$line" | sed 's/^vendor/output/')
 						set_metadata1="set_metadataV"
 					fi
 					if [[ $(echo "$line" | grep set_metadata) ]]; then
-						ftmp=$(echo "$line2" | cut -d'"' -f2 | sed 's:^\/::')
+						ftmp=$(echo "$line" | cut -d'"' -f2 | sed 's:^\/::')
 						if [[ -f $ftmp || -d $ftmp ]]; then
 							echo "$line" >> $prfiles/$set_metadata1
 						fi
-					elif [[ -f $line2 ]]; then
-						caphex=$($tools/source/getcap.py $line2 h | cut -d' ' -f2)
-						if [[ ! $caphex ]]; then
-							caphex="0x0"
-						fi
-						filecon=$(ls -dZ $line2 | gawk '{print $1}')
-						if [[ ! $filecon || $(echo "$filecon" | grep "unlabeled\|?") ]]; then
-							filecon="#CONTEXT"
-						fi
-						stat -c "set_metadata(\"/$line\", \"uid\", %u, \"gid\", %g, \"mode\", 0%a, \"capabilities\", $caphex, \"selabel\", \"$filecon\");" $line2 >> $prfiles/$set_metadata1
+					elif [[ -f $line ]]; then
+						local i=$(grep "^$line " <<< "$getmeta")
+						local thefile=$(echo "$i" | gawk '{print $1}')
+						local uid=$(echo "$i" | gawk '{print $2}')
+						local gid=$(echo "$i" | gawk '{print $3}')
+						local mode=$(echo "$i" | gawk '{print $4}')
+						local cap=$(echo "$i" | gawk '{print $5}')
+						local con=$(echo "$i" | gawk '{print $6}')
+						echo "set_metadata(\"/$thefile\", \"uid\", $uid, \"gid\", $gid, \"mode\", $mode, \"capabilities\", $cap, \"selabel\", \"$con\");" >> $prfiles/$set_metadata1
 					fi
 				done
 			fi
 		fi
 		${usesudo2}umount output/
-		rm -rf $romdir/output $prfiles/cap_temp
+		rm -rf $romdir/output $prfiles/set_meta_list $prfiles/tmpmetalist
 	fi
 	extractimg=""
 }
@@ -4484,8 +4568,8 @@ install_binaries() {
 		fi
 		if [[ ! -d $tools/boot/AIK ]]; then
 			cd $tools/boot
-			dlinfo="aik.tar.gz https://forum.xda-developers.com/devdb/project/?id=1568#downloads AIK-Linux"
-			xdadev
+			dlinfo="aik.tar.gz AIK-Linux"
+			aikdl
 			tar -xf aik.tar.gz 2>&1 >/dev/null
 			rm -rf aik.tar.gz
 			mv AIK-Linux AIK
@@ -4500,8 +4584,8 @@ install_binaries() {
 		if [[ ! -d $tools/boot/AIK2 ]]; then
 			mkdir -p $tools/boot/AIK2
 			cd $tools/boot/AIK2
-			dlinfo="aik2.zip https://forum.xda-developers.com/devdb/project/?id=1568#downloads Win32"
-			xdadev
+			dlinfo="aik2.zip Win32"
+			aikdl
 			$p7z x -y aik2.zip 2>&1 >/dev/null
 			rm -rf aik2.zip
 		fi
@@ -4625,7 +4709,7 @@ isdmverity() {
 		return 1
 	fi
 	findfstab
-	vdtb=$($tools/source/rmverity.py $romdir/${chosenimg}img/split_img/${chosenimg}.img-zImage -s)
+	vdtb=$($tools/source/rmverity.py -s $romdir/${chosenimg}img/split_img/${chosenimg}.img-zImage)
 	vfstab=""
 	if [[ $fstab != 1 ]]; then
 		vfstab=$(${usesudo}grep "verify" $fstab)
@@ -5220,32 +5304,14 @@ partadd() {
 	if [[ -f "$deviceloc/superr_mmc" && $(grep "$whatimg" "$deviceloc/superr_mmc") ]]; then
 		partbyname=$(grep "$whatimg" "$deviceloc/superr_mmc" | gawk '{ print $1 }')
 	elif [[ -s $deviceloc/superr_byname ]]; then
-		if [[ $whatimg = "vendor" ]]; then
-			if [[ -f "$deviceloc/superr_capbyname" ]]; then
-				partbyname="\/VENDOR"
-			elif [[ -f "$deviceloc/superr_appbyname" ]]; then
-				partbyname="\/VNR"
-			else
-				partbyname="\/vendor"
-			fi
-		elif [[ $whatimg = "data" ]]; then
-			if [[ -f "$deviceloc/superr_capbyname" ]]; then
-				partbyname="\/USERDATA"
-			elif [[ -f "$deviceloc/superr_appbyname" ]]; then
-				partbyname="\/UDA"
-			else
-				partbyname="\/userdata"
-			fi
-		else
-			partbyname="\/$whatimg"
-		fi
+		partbyname="$whatimg"
 	fi
 	if [[ $partbyname ]]; then
 		if [[ $permtype = "sparse_dat" || $permtype = "raw_img" ]]; then
 			cd $usdir
 			gawk 'a=/^mount/{b=1}b&&!a{print "#MOUNT";b=0}1' updater-script > updater-script2
 			mv updater-script2 updater-script
-			sed -i "s/#MOUNT/mount(\"ext4\"\,\ \"EMMC\"\,\ file_getprop\(\"\/tmp\/config\",\ \"byname\"\)\ +\ \"$partbyname\"\ +\ file_getprop\(\"\/tmp\/config\",\ \"slotnum\"\),\ \"\/$whatimg\"\,\ \"\");/" updater-script
+			sed -i "s/#MOUNT/mount(\"ext4\"\,\ \"EMMC\"\,\ file_getprop\(\"\/tmp\/config\",\ \"$whatimg\"\),\ \"\/$whatimg\"\,\ \"\");/" updater-script
 			gawk 'a=/^ifelse\(is_mounted/{b=1}b&&!a{print "#UNMOUNT1";b=0}1' updater-script > updater-script2
 			mv updater-script2 updater-script
 			gawk 'a=/^unmount/{b=1}b&&!a{print "#UNMOUNT2";b=0}1' updater-script > updater-script2
@@ -5267,7 +5333,6 @@ partadd() {
 					fi
 				fi
 				sed -i "/#$partup/ r $tools/updater/extra-$permtype.txt" updater-script
-				sed -i "s/#PARTEXTRA/$partbyname/g" updater-script
 				sed -i "s/#PEXTRA/$whatimg/g" updater-script
 				touch $prfiles/${whatimg}img
 			elif [[ $whatimg = "data" ]]; then
@@ -5277,7 +5342,7 @@ partadd() {
 					gawk 'a=/system_new/{b=1}b&&!a{print "#DATA";b=0}1' updater-script > updater-script2
 				fi
 				mv updater-script2 updater-script
-				choice=""
+				choice=
 				while [[ ! $choice ]]; do
 					banner
 					echo "$yellowb$redt$t_extra_data$normal"
@@ -5288,7 +5353,7 @@ partadd() {
 					read -n 1 -p "$t_extra_data_perm" choice
 
 					if [[ ! ${choice} =~ ^[1-2]$ ]]; then
-						choice=""
+						choice=
 						continue
 					elif [[ $choice = "1" ]]; then # START sparse_dat/raw_img data
 						sed -i "/#DATA/ r $tools/updater/data-$permtype.txt" updater-script
@@ -5297,14 +5362,13 @@ partadd() {
 						sed -i "/#DATA/ r $tools/updater/data-set_metadata.txt" updater-script
 						touch $prfiles/data-set_metadata
 					fi
-					sed -i "s/#PARTDATA/$partbyname/" updater-script
 				done
 			fi
 		else
 			cd $usdir
 			gawk 'a=/^mount/{b=1}b&&!a{print "#MOUNT";b=0}1' updater-script > updater-script2
 			mv updater-script2 updater-script
-			sed -i "s/#MOUNT/mount(\"ext4\"\,\ \"EMMC\"\,\ file_getprop\(\"\/tmp\/config\",\ \"byname\"\)\ +\ \"$partbyname\"\ +\ file_getprop\(\"\/tmp\/config\",\ \"slotnum\"\),\ \"\/$whatimg\");/" updater-script
+			sed -i "s/#MOUNT/mount(\"ext4\"\,\ \"EMMC\"\,\ file_getprop\(\"\/tmp\/config\",\ \"$whatimg\"\),\ \"\/$whatimg\");/" updater-script
 			gawk 'a=/^ifelse\(is_mounted/{b=1}b&&!a{print "#UNMOUNT1";b=0}1' updater-script > updater-script2
 			mv updater-script2 updater-script
 			gawk 'a=/^unmount/{b=1}b&&!a{print "#UNMOUNT2";b=0}1' updater-script > updater-script2
@@ -5314,7 +5378,7 @@ partadd() {
 			if [[ ! $whatimg = "data" ]]; then
 				gawk 'a=/^format/{b=1}b&&!a{print "#FORMAT";b=0}1' updater-script > updater-script2
 				mv updater-script2 updater-script
-				sed -i "s/#FORMAT/format(\"ext4\"\,\ \"EMMC\"\,\ file_getprop\(\"\/tmp\/config\",\ \"byname\"\)\ +\ \"$partbyname\"\ +\ file_getprop\(\"\/tmp\/config\",\ \"slotnum\"\),\ \"0\"\,\ \"\/$whatimg\");/" updater-script
+				sed -i "s/#FORMAT/format(\"ext4\"\,\ \"EMMC\"\,\ file_getprop\(\"\/tmp\/config\",\ \"$whatimg\"\),\ \"0\"\,\ \"\/$whatimg\");/" updater-script
 			fi
 			if [[ -s $prfiles/exdirs && $(grep "$whatimg" $prfiles/exdirs) ]]; then
 				partup=$(echo $whatimg | gawk '{print toupper($0)}')
@@ -5323,14 +5387,13 @@ partadd() {
 					sed -i "s:$line:$line\n#$partup:" updater-script
 				fi
 				sed -i "/#$partup/ r $tools/updater/extra-set_metadata.txt" updater-script
-				sed -i "s/#PARTEXTRA/$partbyname/g" updater-script
 				sed -i "s/#PEXTRA/$whatimg/g" updater-script
 				touch $prfiles/${whatimg}img
 				if [[ $whatimg = "vendor" && -f $prfiles/set_metadataV ]]; then
 					cat $prfiles/set_metadataV >> $prfiles/set_metadata
 				fi
 			elif [[ $whatimg = "data" ]]; then
-				gawk 'a=/\"system\"/{b=1}b&&!a{print "#DATA";b=0}1' updater-script > updater-script2
+				gawk 'a=/\"system\",/{b=1}b&&!a{print "#DATA";b=0}1' updater-script > updater-script2
 				mv updater-script2 updater-script
 				sed -i "/#DATA/ r $tools/updater/data-set_metadata.txt" updater-script
 				touch $prfiles/data-set_metadata
@@ -5428,7 +5491,7 @@ part_setup() {
 	if [[ -f "$deviceloc/superr_mmc" ]]; then
 		if [[ $(grep "$chosenimg" "$deviceloc/superr_mmc") ]]; then
 			mmcchosen=$(grep "$chosenimg" "$deviceloc/superr_mmc" | gawk '{ print $1 }')
-			sed -i "s:file_getprop(\"\/tmp\/config\",\ \"byname\")\ +\ \"\/$chosenimg\"\ +\ file_getprop(\"\/tmp\/config\",\ \"slotnum\"):\"$mmcchosen\":g" $usdir/updater-script
+			sed -i "s:file_getprop(\"\/tmp\/config\",\ \"$chosenimg\"):\"$mmcchosen\":g" $usdir/updater-script
 		else
 			if [[ $chosenimg = 'boot' && -f $romdir/system/init.rc ]]; then
 				grep -v " boot \|boot.img" $usdir/updater-script > $usdir/updater-script2
@@ -5443,7 +5506,7 @@ part_setup() {
 			fi
 		fi
 		mmcsystem=$(grep "system" "$deviceloc/superr_mmc" | gawk '{ print $1 }')
-		sed -i "s:file_getprop(\"\/tmp\/config\",\ \"byname\")\ +\ \"\/system\"\ +\ file_getprop(\"\/tmp\/config\",\ \"slotnum\"):\"$mmcsystem\":g" $usdir/updater-script
+		sed -i "s:file_getprop(\"\/tmp\/config\",\ \"system\"):\"$mmcsystem\":g" $usdir/updater-script
 	else
 		if [[ -f "$deviceloc/superr_capbyname" ]]; then
 			sed -i "s/+\ \"\/system\"\ +/+\ \"\/SYSTEM\"\ +/g" $usdir/updater-script
@@ -6483,10 +6546,9 @@ if [[ ! -f $tools/depmet ]]; then
 		fi
 	done
 	if [[ -s depinstall ]]; then
+		debpkg="binutils coreutils cpio e2fsprogs findutils gawk grep gzip libc-bin liblz4-tool lzop mount ncurses-bin procps sed tar unzip util-linux vim-common wget xz-utils"
 		if [[ $(getconf LONG_BIT) = "64" ]]; then
-			debpkg="binutils libc6-i386 coreutils cpio e2fsprogs findutils gawk gcc grep gzip libc-bin liblz4-tool lzop mount ncurses-bin perl-base procps sed tar unzip util-linux vim-common wget xz-utils"
-		else
-			debpkg="binutils coreutils cpio e2fsprogs findutils gawk gcc grep gzip libc-bin liblz4-tool lzop mount ncurses-bin perl-base procps sed tar unzip util-linux vim-common wget xz-utils"
+			debpkg="$debpkg libc6-i386"
 		fi
 		depinstall=$(cat depinstall)
 		banner
@@ -6544,9 +6606,13 @@ if [[ ! $cyg ]]; then
 	if [[ $(getconf LONG_BIT) = "64" ]]; then
 		make_ext4fs="$ttools/make_ext4fs_64"
 		simg2img="$ttools/simg2img_64"
+		vdexext="$ttools/vdexExtractor_64"
+		lz4="$tools/boot/AIK/bin/linux/x86_64/lz4"
 	else
 		make_ext4fs="$ttools/make_ext4fs_32"
 		simg2img="$ttools/simg2img_32"
+		vdexext="$ttools/vdexExtractor_32"
+		lz4="$tools/boot/AIK/bin/linux/i686/lz4"
 	fi
 else
 	make_ext4fs="$ttools/make_ext4fs.exe"
