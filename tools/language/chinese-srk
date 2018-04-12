@@ -1,4 +1,5 @@
 ### This project has be translation by garyyiu2015
+### Latest modified: 12/4/2018
 
 # Main Menu
 export t_title_main="主菜单"
@@ -31,6 +32,7 @@ export t_menu_build_menu="ROM 打包菜单"
 export t_startup_project="当前项目:"
 export t_startup_version="安卓版本:"
 export t_startup_no_root="厨房不能以ROOT运行"
+export t_startup_python="你必须安装Python 3.5或更高版本. 你安装的是: "
 export t_startup_shell_error="${redb}${yellowt}${bold}SHELL ERROR:$normal\nBash is required to use this kitchen.\nThe kitchen is currently running in $SHELL."
 export t_startup_dep_check="检查依赖 ..."
 export t_startup_dep_missing="${redb}${yellowt}${bold}缺少依赖文件:$normal\n下面的依赖缺失:$normal"
@@ -171,6 +173,10 @@ export t_menu_initd="添加/删除 init.d 支持"
 export t_menu_insecure="Insecure/Secure boot.img"
 export t_menu_dmverity="删除 dm-verity"
 export t_menu_forcee="添加/删除 forceencrypt"
+export t_menu_deopatch="针对Oreo deodex为sepolicy进行修补"
+export t_menu_deopatch_add="针对Oreo deodex对sepolicy修补成功"
+export t_menu_deopatch_none="找不到sepolicy"
+export t_menu_deopatch_fail="修补失败。或许sepolicy已经进行过修补了"
 export t_menu_unpack="解包"
 export t_menu_boot_flashable="构建此img单刷包:"
 export t_menu_switch_boot="在之间切换boot/recovery"
@@ -325,8 +331,6 @@ export t_title_cho_smali="选择smali:"
 export t_title_cho_baksmali="选择baksmali:"
 export t_title_cho_oat2dex="选择oat2dex:"
 export t_deodex_need_64_bit="你需要64位Linux才能使用此功能"
-export t_deodex_need_oatdump="你需要oddump继续."
-export t_deodex_oatdump_dl_m="(大约下载105MB)"
 export t_deodex_dl_install="正在下载/安装 ..."
 export t_deodex_no_api="无法检测Android版本."
 export t_deodex_config_arch="配置设备的arch.\n\n提示:\n检查framework文件夹, 里面可以看到另一个文件夹. \n文件夹的名字可能是以下之一\n(ex. arm, arm64, x86).\n\n如果这里有问题, 检查以下问题:\n\n1. 确保输入的arch变量是正确的.\n2. 确保ROM没有deodexed.\n\n输入设备的arch并且按回车继续."
@@ -380,6 +384,7 @@ export t_extract_zip_fail="这个zip不包含厨房可以\n提取的任何东西
 export t_extract_zip="提取zip ..."
 export t_extract_dat="正在提取 system.new.dat, system.transfer.list, 和 boot.img ..."
 export t_extract_convert_sys="转换到 "
+export t_extract_convert_br="解压dat.br中..."
 export t_extract_img_from_zip="正在从zip包中提取镜像 ..."
 export t_extract_tar_boot="正在提取 system.ext4.tar.a 和 boot.img ..."
 export t_extract_img="正在提取 images ..."
@@ -448,6 +453,7 @@ export t_byname_manual_info="你将需要手动在updater-script中输入分区�
 
 # Signature
 export t_sig_info="${bluet}这个问题的答案将显示当zip创建时\n刷入的zip和将被转换为zip的名称，$normal\n\n你的zip的名称是?"
+export t_sig_error="zip命名不允许带有/符号"
 export t_donate_sig_cust="${bluet}这一个将显示在下面的zip名称，\n当刷入时 SuperR's Kitchen创建声明的标准版本.$normal\n\n你的签名是什么?"
 
 # Zip devices
@@ -490,6 +496,7 @@ export t_update_fail="更新时出现问题.如果你修改了除项目之外的
 export t_update_q="你想现在更新吗?  y/n  "
 export t_update_auto_q="你想在厨房启动时检查更新?  y/n  "
 export t_restart="厨房需要重启一下哟～"
+export t_tools_dl_failed="工具下载失败:"
 
 # New Project
 export t_new_q="请输入新项目名称(${yellowt}空格会自动替换为_XXX$normal):"
