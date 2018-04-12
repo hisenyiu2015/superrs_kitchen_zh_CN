@@ -59,3 +59,12 @@ for i in recovery RECOVERY recovery_a recovery_b; do
 		break
 	fi
 done
+if [ $(readlink $byname2/version) ]; then
+	echo "version=$byname2/version$SLOT" >> /tmp/config
+fi
+if [ $(readlink $byname2/product) ]; then
+	echo "product=$byname2/product$SLOT" >> /tmp/config
+fi
+if [ $(readlink $byname2/cust) ]; then
+	echo "cust=$byname2/cust$SLOT" >> /tmp/config
+fi
